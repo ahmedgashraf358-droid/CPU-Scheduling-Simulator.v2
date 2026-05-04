@@ -1,0 +1,1033 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CPU Scheduling Simulator</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  darkMode: 'class',
+  theme: {
+    extend: {
+      colors: {
+        background: '#06060b', foreground: '#e8e8ed', card: '#0e0e16',
+        muted: '#161622', 'muted-foreground': '#6b6b80', accent: '#1a1a2a',
+        primary: '#00d4ff', destructive: '#ff4466',
+        border: 'rgba(255,255,255,0.06)', input: 'rgba(255,255,255,0.08)',
+      }
+    }
+  }
+}
+</script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap');
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Inter',sans-serif; background:#06060b; color:#e8e8ed; overflow-x:hidden; }
+  ::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-track{background:transparent}
+  ::-webkit-scrollbar-thumb{background:rgba(0,212,255,.2);border-radius:3px}
+  ::-webkit-scrollbar-thumb:hover{background:rgba(0,212,255,.4)}
+  .font-mono{font-family:'JetBrains Mono',monospace}
+  .bg-grid{background-image:linear-gradient(rgba(0,212,255,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(0,212,255,.03) 1px,transparent 1px);background-size:40px 40px}
+  .glass{background:rgba(14,14,22,.8);backdrop-filter:blur(16px);border:1px solid rgba(0,212,255,.08)}
+  .glow-border{position:relative}
+  .glow-border::before{content:'';position:absolute;inset:0;padding:1px;border-radius:inherit;background:linear-gradient(135deg,rgba(0,212,255,.3),rgba(168,85,247,.3),rgba(0,255,136,.1));-webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);-webkit-mask-composite:xor;mask-composite:exclude;pointer-events:none}
+  @keyframes neonPulse{0%,100%{box-shadow:0 0 20px rgba(0,212,255,.3),0 0 60px rgba(0,212,255,.1)}50%{box-shadow:0 0 30px rgba(0,212,255,.5),0 0 80px rgba(0,212,255,.2)}}
+  .neon-pulse{animation:neonPulse 2s ease-in-out infinite}
+  @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}.float{animation:float 3s ease-in-out infinite}
+  @keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}.fade-in-up{animation:fadeInUp .5s ease-out forwards}
+  @keyframes fadeIn{from{opacity:0}to{opacity:1}}.fade-in{animation:fadeIn .4s ease-out forwards}
+  @keyframes slideInRight{from{opacity:0;transform:translateX(40px)}to{opacity:1;transform:translateX(0)}}.slide-in{animation:slideInRight .5s ease-out forwards}
+  @keyframes scaleIn{from{opacity:0;transform:scale(.9)}to{opacity:1;transform:scale(1)}}.scale-in{animation:scaleIn .4s ease-out forwards}
+  @keyframes spinSlow{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}.spin-slow{animation:spinSlow 3s linear infinite}
+  @keyframes thinkDot{0%,20%{opacity:.2}40%{opacity:1}100%{opacity:.2}}
+  .think-dot:nth-child(1){animation:thinkDot 1.4s ease-in-out infinite}
+  .think-dot:nth-child(2){animation:thinkDot 1.4s ease-in-out .2s infinite}
+  .think-dot:nth-child(3){animation:thinkDot 1.4s ease-in-out .4s infinite}
+  .neon-text{text-shadow:0 0 10px rgba(0,212,255,.5),0 0 30px rgba(0,212,255,.2)}
+  @keyframes fillBar{from{width:0}}.fill-bar{animation:fillBar 1s ease-out forwards}
+  .hidden{display:none!important}
+  #screen-analyzing:not(.hidden),
+  #screen-result:not(.hidden),
+  #screen-gantt:not(.hidden),
+  #screen-conditional:not(.hidden),
+  #screen-input:not(.hidden){ display:flex!important; }
+  input[type="number"]::-webkit-inner-spin-button,input[type="number"]::-webkit-outer-spin-button{opacity:1}
+
+  /* Canvas CG panel */
+  #cg-canvas-wrap {
+    position: relative;
+    width: 100%;
+    border-radius: 12px;
+    overflow: hidden;
+    background: rgba(6,6,11,0.95);
+    border: 1px solid rgba(0,212,255,0.12);
+  }
+  #gantt-canvas {
+    display: block;
+    width: 100%;
+    height: 140px;
+  }
+  #cg-info-bar {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    align-items: center;
+    padding: 8px 12px;
+    background: rgba(0,0,0,0.3);
+    border-top: 1px solid rgba(0,212,255,0.08);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: rgba(0,212,255,0.5);
+  }
+  #cg-info-bar span { color: rgba(0,212,255,0.85); }
+
+  /* CG Matrix display */
+  #matrix-display {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+  }
+  .matrix-grid {
+    display: inline-grid;
+    grid-template-columns: repeat(3, 56px);
+    gap: 2px;
+    background: rgba(0,212,255,0.05);
+    border: 1px solid rgba(0,212,255,0.15);
+    border-radius: 8px;
+    padding: 8px;
+  }
+  .matrix-cell {
+    text-align: center;
+    padding: 3px 4px;
+    border-radius: 4px;
+    color: rgba(0,212,255,0.7);
+    background: rgba(0,0,0,0.3);
+    transition: background 0.2s, color 0.2s;
+  }
+  .matrix-cell.active {
+    background: rgba(0,212,255,0.2);
+    color: #00d4ff;
+  }
+</style>
+</head>
+<body class="bg-grid min-h-screen">
+
+<div class="fixed inset-0 pointer-events-none overflow-hidden">
+  <div class="absolute top-1/4 left-1/4 w-[500px] h-[500px] bg-cyan-500/5 rounded-full blur-[120px]"></div>
+  <div class="absolute bottom-1/4 right-1/4 w-[400px] h-[400px] bg-purple-500/5 rounded-full blur-[100px]"></div>
+</div>
+
+<div class="relative z-10 min-h-screen">
+
+<!-- ============ SCREEN 1: LANDING ============ -->
+<div id="screen-landing" class="min-h-screen flex flex-col items-center justify-center px-4">
+  <div class="float mb-8">
+    <div class="w-24 h-24 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-purple-500/20 border border-cyan-500/20 flex items-center justify-center neon-pulse">
+      <svg class="w-12 h-12 text-cyan-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 002.25-2.25V6.75a2.25 2.25 0 00-2.25-2.25H6.75A2.25 2.25 0 004.5 6.75v10.5a2.25 2.25 0 002.25 2.25zm.75-12h9v9h-9v-9z"/></svg>
+    </div>
+  </div>
+  <h1 class="text-5xl sm:text-6xl md:text-7xl font-bold tracking-tight mb-4 text-center fade-in-up">
+    <span class="bg-gradient-to-r from-cyan-400 via-cyan-300 to-purple-400 bg-clip-text text-transparent neon-text">CPU Scheduling</span><br>
+    <span class="text-white/90">Simulator</span>
+  </h1>
+  <p class="text-[#6b6b80] text-lg mb-12 text-center max-w-md fade-in-up" style="animation-delay:.2s">
+    AI-powered scheduling analysis with real-time Canvas 2D visualization using transformation matrices
+  </p>
+  <button onclick="showScreen('input')" class="group relative px-10 py-4 rounded-xl font-semibold text-lg overflow-hidden transition-all duration-300 hover:scale-105 active:scale-95 neon-pulse cursor-pointer fade-in-up" style="animation-delay:.4s">
+    <div class="absolute inset-0 bg-gradient-to-r from-cyan-500 to-cyan-400 rounded-xl"></div>
+    <div class="absolute inset-0 bg-gradient-to-r from-cyan-400 to-purple-400 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+    <span class="relative flex items-center gap-3 text-gray-900">
+      <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z"/></svg>
+      Start Processing
+      <svg class="w-5 h-5 transition-transform group-hover:translate-x-1" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"/></svg>
+    </span>
+  </button>
+  <div class="flex flex-wrap justify-center gap-4 mt-16 fade-in-up" style="animation-delay:.6s">
+    <div class="flex items-center gap-2 px-4 py-2 rounded-full bg-white/[0.03] border border-white/[0.06] text-[#6b6b80] text-sm"><svg class="w-4 h-4 text-cyan-400/70" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/></svg>ML-Powered</div>
+    <div class="flex items-center gap-2 px-4 py-2 rounded-full bg-white/[0.03] border border-white/[0.06] text-[#6b6b80] text-sm"><svg class="w-4 h-4 text-cyan-400/70" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5"/></svg>5 Algorithms</div>
+    <div class="flex items-center gap-2 px-4 py-2 rounded-full bg-white/[0.03] border border-white/[0.06] text-[#6b6b80] text-sm"><svg class="w-4 h-4 text-cyan-400/70" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 7.5l3 2.25-3 2.25m4.5 0h3m-9 8.25h13.5A2.25 2.25 0 0021 18V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v12a2.25 2.25 0 002.25 2.25z"/></svg>Canvas 2D + Matrices</div>
+    <div class="flex items-center gap-2 px-4 py-2 rounded-full bg-white/[0.03] border border-white/[0.06] text-[#6b6b80] text-sm"><svg class="w-4 h-4 text-cyan-400/70" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.28m5.94 2.28l-2.28 5.941"/></svg>Metrics Analysis</div>
+  </div>
+</div>
+
+<!-- ============ SCREEN 2: INPUT ============ -->
+<div id="screen-input" class="hidden min-h-screen flex flex-col items-center px-4 py-12">
+  <div class="w-full max-w-3xl">
+    <button onclick="showScreen('landing')" class="flex items-center gap-2 text-[#6b6b80] hover:text-white transition-colors mb-8 cursor-pointer">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18"/></svg>Back
+    </button>
+    <div class="text-center mb-10 fade-in-up">
+      <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-sm mb-4">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 002.25-2.25V6.75a2.25 2.25 0 00-2.25-2.25H6.75A2.25 2.25 0 004.5 6.75v10.5a2.25 2.25 0 002.25 2.25z"/></svg>
+        Process Configuration
+      </div>
+      <h2 class="text-3xl sm:text-4xl font-bold mb-2">Enter The Number of <span class="text-cyan-400">Processes</span></h2>
+      <p class="text-[#6b6b80]">Configure your process parameters for scheduling analysis</p>
+    </div>
+
+    <div id="num-input-section" class="flex flex-col items-center gap-4 mb-8 fade-in-up" style="animation-delay:.1s">
+      <div class="glass rounded-xl p-6 flex flex-col sm:flex-row items-center gap-4 w-full max-w-md">
+        <input type="number" id="num-processes" min="1" max="10" placeholder="e.g. 5"
+          class="text-center text-2xl font-bold h-14 w-full bg-transparent border border-white/10 rounded-lg px-3 focus:border-cyan-500/50 focus:outline-none text-white" />
+        <button onclick="generateTable()" class="h-14 px-8 bg-gradient-to-r from-cyan-500 to-cyan-400 hover:from-cyan-400 hover:to-cyan-300 text-gray-900 font-semibold text-base w-full sm:w-auto rounded-lg transition-all cursor-pointer">
+          Generate Table
+          <svg class="w-5 h-5 inline ml-1" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5"/></svg>
+        </button>
+      </div>
+      <p class="text-[#6b6b80]/60 text-sm">Supports 1 to 10 processes</p>
+    </div>
+
+    <div id="table-section" class="hidden fade-in-up">
+      <div class="glass rounded-xl overflow-hidden">
+        <div class="p-4 pb-2">
+          <h3 class="flex items-center gap-3 text-lg font-semibold">
+            <div class="w-8 h-8 rounded-lg bg-cyan-500/20 flex items-center justify-center">
+              <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5"/></svg>
+            </div>Process Table
+          </h3>
+        </div>
+        <div class="px-2 sm:px-4 pb-4">
+          <div class="overflow-x-auto">
+            <table class="w-full">
+              <thead>
+                <tr class="border-b border-white/[0.06]">
+                  <th class="py-3 px-4 text-left text-sm font-semibold text-[#6b6b80] uppercase tracking-wider">Process</th>
+                  <th class="py-3 px-4 text-center text-sm font-semibold text-[#6b6b80] uppercase tracking-wider">Arrival Time</th>
+                  <th class="py-3 px-4 text-center text-sm font-semibold text-[#6b6b80] uppercase tracking-wider">Burst Time</th>
+                </tr>
+              </thead>
+              <tbody id="process-table-body"></tbody>
+            </table>
+          </div>
+          <div class="flex flex-col sm:flex-row items-center justify-between gap-4 mt-6 pt-4 border-t border-white/[0.06]">
+            <button onclick="resetInput()" class="flex items-center gap-2 text-[#6b6b80] hover:text-white transition-colors cursor-pointer">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182"/></svg>Reset
+            </button>
+            <button onclick="analyzeWithAI()" id="btn-analyze" class="h-12 px-8 bg-gradient-to-r from-cyan-500 to-purple-500 hover:from-cyan-400 hover:to-purple-400 text-white font-semibold text-base rounded-lg transition-all cursor-pointer flex items-center gap-2">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/></svg>
+              Analyze with AI
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ SCREEN 3: ANALYZING ============ -->
+<div id="screen-analyzing" class="hidden min-h-screen flex items-center justify-center px-4">
+  <div class="glass rounded-2xl p-10 max-w-md w-full text-center glow-border slide-in">
+    <div class="relative w-20 h-20 mx-auto mb-6">
+      <div class="absolute inset-0 rounded-full border-2 border-cyan-500/20"></div>
+      <div class="absolute inset-0 rounded-full border-2 border-transparent border-t-cyan-400 spin-slow"></div>
+      <div class="absolute inset-2 rounded-full border-2 border-transparent border-b-purple-400 spin-slow" style="animation-direction:reverse;animation-duration:2s"></div>
+      <div class="absolute inset-0 flex items-center justify-center">
+        <svg class="w-8 h-8 text-cyan-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/></svg>
+      </div>
+    </div>
+    <h3 class="text-xl font-bold mb-2">Analyzing Process Data</h3>
+    <p class="text-[#6b6b80] mb-6">ML model is evaluating optimal scheduling strategy</p>
+    <div class="flex justify-center gap-2 mb-8">
+      <div class="think-dot w-2 h-2 rounded-full bg-cyan-400"></div>
+      <div class="think-dot w-2 h-2 rounded-full bg-cyan-400"></div>
+      <div class="think-dot w-2 h-2 rounded-full bg-cyan-400"></div>
+    </div>
+    <div class="space-y-3 text-left" id="analyze-steps">
+      <div class="flex items-center gap-3" id="step-0"><div class="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0"><div class="w-2 h-2 rounded-full bg-[#6b6b80]/30"></div></div><span class="text-sm text-[#6b6b80]/40">Parsing process parameters</span></div>
+      <div class="flex items-center gap-3" id="step-1"><div class="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0"><div class="w-2 h-2 rounded-full bg-[#6b6b80]/30"></div></div><span class="text-sm text-[#6b6b80]/40">Extracting workload features</span></div>
+      <div class="flex items-center gap-3" id="step-2"><div class="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0"><div class="w-2 h-2 rounded-full bg-[#6b6b80]/30"></div></div><span class="text-sm text-[#6b6b80]/40">Running ML classification model</span></div>
+      <div class="flex items-center gap-3" id="step-3"><div class="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0"><div class="w-2 h-2 rounded-full bg-[#6b6b80]/30"></div></div><span class="text-sm text-[#6b6b80]/40">Selecting optimal algorithm (argmax)</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ SCREEN 4: RESULT ============ -->
+<div id="screen-result" class="hidden min-h-screen flex flex-col items-center justify-center px-4 py-8">
+  <div class="max-w-2xl w-full">
+    <div class="glass rounded-2xl p-8 text-center glow-border scale-in">
+      <div class="w-16 h-16 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center mx-auto mb-6 fade-in-up">
+        <svg class="w-8 h-8 text-emerald-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      </div>
+      <h3 class="text-lg text-[#6b6b80] mb-2">ML Model Analysis Complete</h3>
+      <div class="my-6 p-6 rounded-xl bg-gradient-to-br from-cyan-500/10 to-purple-500/10 border border-cyan-500/20 neon-pulse fade-in-up" style="animation-delay:.2s">
+        <p class="text-sm text-[#6b6b80] mb-2">Best Algorithm</p>
+        <p id="result-algorithm" class="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-cyan-400 to-purple-400 bg-clip-text text-transparent"></p>
+        <div class="mt-3 flex items-center justify-center gap-2">
+          <div class="h-1.5 flex-1 max-w-[120px] rounded-full bg-white/10 overflow-hidden">
+            <div id="result-bar" class="h-full rounded-full bg-gradient-to-r from-cyan-400 to-emerald-400 fill-bar" style="width:0"></div>
+          </div>
+          <span id="result-confidence" class="text-sm text-cyan-400 font-mono"></span>
+        </div>
+      </div>
+      <div id="prob-distribution" class="mb-6 text-left space-y-2 fade-in-up" style="animation-delay:.25s"></div>
+      <div class="flex flex-col sm:flex-row gap-3 justify-center fade-in-up" style="animation-delay:.3s">
+        <button onclick="showScreen('input')" class="h-12 px-8 text-[#6b6b80] hover:text-white font-semibold rounded-lg transition-all cursor-pointer flex items-center justify-center gap-2">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18"/></svg>Modify Input
+        </button>
+        <button onclick="proceedFromResult()" class="h-12 px-8 bg-gradient-to-r from-cyan-500 to-cyan-400 hover:from-cyan-400 hover:to-cyan-300 text-gray-900 font-semibold rounded-lg transition-all cursor-pointer flex items-center justify-center gap-2">
+          Proceed
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ SCREEN 5: CONDITIONAL INPUT ============ -->
+<div id="screen-conditional" class="hidden min-h-screen flex flex-col items-center px-4 py-12">
+  <div class="w-full max-w-lg">
+    <button onclick="showScreen('result')" class="flex items-center gap-2 text-[#6b6b80] hover:text-white transition-colors mb-8 cursor-pointer">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18"/></svg>Back
+    </button>
+    <div class="text-center mb-8 fade-in-up">
+      <div id="cond-badge" class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-400 text-sm mb-4"></div>
+      <h2 id="cond-title" class="text-2xl sm:text-3xl font-bold mb-2"></h2>
+      <p id="cond-desc" class="text-[#6b6b80] text-sm"></p>
+    </div>
+    <div class="glass rounded-xl p-6 glow-border fade-in-up" style="animation-delay:.1s">
+      <div id="cond-content"></div>
+      <div class="mt-6 pt-4 border-t border-white/[0.06]">
+        <button onclick="submitConditional()" class="w-full h-12 bg-gradient-to-r from-cyan-500 to-purple-500 hover:from-cyan-400 hover:to-purple-400 text-white font-semibold rounded-lg transition-all cursor-pointer flex items-center justify-center gap-2">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/></svg>Run Simulation
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ SCREEN 6: GANTT + METRICS ============ -->
+<div id="screen-gantt" class="hidden min-h-screen flex flex-col items-center px-4 py-12">
+  <div class="w-full max-w-4xl">
+    <div class="text-center mb-8 fade-in-up">
+      <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm mb-4">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5"/></svg>
+        <span id="gantt-algo-name"></span>
+      </div>
+      <h2 class="text-2xl sm:text-3xl font-bold mb-2">Live Gantt Chart <span class="text-cyan-400">Visualization</span></h2>
+      <p class="text-[#6b6b80] text-sm">Canvas 2D rendering with 2D Transformation Matrices</p>
+    </div>
+
+    <!-- ── CG Canvas Gantt ── -->
+    <div class="glass rounded-xl p-4 sm:p-6 glow-border mb-4 fade-in-up" style="animation-delay:.1s">
+      <div id="cg-canvas-wrap">
+        <canvas id="gantt-canvas"></canvas>
+        <div id="cg-info-bar">
+          <span style="color:rgba(0,212,255,0.4)">frame:</span><span id="cg-frame">0</span>
+          <span style="color:rgba(0,212,255,0.4)">blocks:</span><span id="cg-blocks">0</span>
+          <span style="color:rgba(0,212,255,0.4)">transform:</span><span id="cg-transform">scale(0,0) translate(0,0)</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── CG Matrix Panel ── -->
+    <div class="glass rounded-xl p-4 mb-8 fade-in-up" style="animation-delay:.15s">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center">
+          <svg class="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 7.5l3 2.25-3 2.25m4.5 0h3m-9 8.25h13.5A2.25 2.25 0 0021 18V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v12a2.25 2.25 0 002.25 2.25z"/></svg>
+        </div>
+        <div>
+          <h3 class="font-semibold text-sm">2D Transformation Matrix</h3>
+          <p class="text-[#6b6b80] text-xs">Live matrix applied to each Gantt block via Canvas ctx.setTransform()</p>
+        </div>
+      </div>
+      <div class="flex flex-wrap gap-6 items-start" id="matrix-display">
+        <!-- filled by JS -->
+      </div>
+    </div>
+
+    <!-- Metrics -->
+    <div id="metrics-section" class="hidden">
+      <div class="text-center mb-6 fade-in-up">
+        <h3 class="text-xl font-bold">Performance <span class="text-cyan-400">Metrics</span></h3>
+        <p class="text-[#6b6b80] text-sm mt-1">Detailed scheduling performance analysis</p>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+        <div class="glass rounded-xl border border-cyan-500/20 shadow-lg shadow-cyan-500/10 fade-in-up p-5 text-center">
+          <div class="w-10 h-10 rounded-xl bg-cyan-500/20 flex items-center justify-center mx-auto mb-3"><svg class="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>
+          <p class="text-xs text-[#6b6b80] uppercase tracking-wider mb-1">Avg Waiting Time</p>
+          <p id="metric-wt" class="text-3xl font-bold text-cyan-400 font-mono"></p>
+          <p class="text-xs text-[#6b6b80]/60 mt-1">units</p>
+        </div>
+        <div class="glass rounded-xl border border-purple-500/20 shadow-lg shadow-purple-500/10 fade-in-up p-5 text-center" style="animation-delay:.1s">
+          <div class="w-10 h-10 rounded-xl bg-purple-500/20 flex items-center justify-center mx-auto mb-3"><svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>
+          <p class="text-xs text-[#6b6b80] uppercase tracking-wider mb-1">Avg Turnaround Time</p>
+          <p id="metric-tat" class="text-3xl font-bold text-purple-400 font-mono"></p>
+          <p class="text-xs text-[#6b6b80]/60 mt-1">units</p>
+        </div>
+        <div class="glass rounded-xl border border-emerald-500/20 shadow-lg shadow-emerald-500/10 fade-in-up p-5 text-center" style="animation-delay:.2s">
+          <div class="w-10 h-10 rounded-xl bg-emerald-500/20 flex items-center justify-center mx-auto mb-3"><svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.28m5.94 2.28l-2.28 5.941"/></svg></div>
+          <p class="text-xs text-[#6b6b80] uppercase tracking-wider mb-1">Avg Response Time</p>
+          <p id="metric-rt" class="text-3xl font-bold text-emerald-400 font-mono"></p>
+          <p class="text-xs text-[#6b6b80]/60 mt-1">units</p>
+        </div>
+      </div>
+
+      <div id="verification-card" class="glass rounded-xl p-5 mb-6 fade-in-up" style="animation-delay:.25s"></div>
+
+      <div class="glass rounded-xl overflow-hidden mb-8 fade-in-up" style="animation-delay:.3s">
+        <div class="p-4 pb-2">
+          <h3 class="flex items-center gap-3 text-lg font-semibold">
+            <div class="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center"><svg class="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/></svg></div>
+            Detailed Process Analysis
+          </h3>
+        </div>
+        <div class="px-2 sm:px-4 pb-4 overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b border-white/[0.06]">
+                <th class="py-2 px-3 text-center text-xs font-semibold text-[#6b6b80] uppercase tracking-wider">Process</th>
+                <th class="py-2 px-3 text-center text-xs font-semibold text-[#6b6b80] uppercase tracking-wider">AT</th>
+                <th class="py-2 px-3 text-center text-xs font-semibold text-[#6b6b80] uppercase tracking-wider">BT</th>
+                <th class="py-2 px-3 text-center text-xs font-semibold text-[#6b6b80] uppercase tracking-wider">CT</th>
+                <th class="py-2 px-3 text-center text-xs font-semibold text-[#6b6b80] uppercase tracking-wider">TAT</th>
+                <th class="py-2 px-3 text-center text-xs font-semibold text-[#6b6b80] uppercase tracking-wider">WT</th>
+                <th class="py-2 px-3 text-center text-xs font-semibold text-[#6b6b80] uppercase tracking-wider">RT</th>
+              </tr>
+            </thead>
+            <tbody id="detail-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="flex justify-center pb-8 fade-in-up" style="animation-delay:.4s">
+        <button onclick="fullReset()" class="h-12 px-8 bg-gradient-to-r from-cyan-500/20 to-purple-500/20 border border-cyan-500/20 hover:from-cyan-500/30 hover:to-purple-500/30 text-cyan-400 font-semibold rounded-lg transition-all cursor-pointer flex items-center gap-2">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182"/></svg>
+          Start New Simulation
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<!-- ================================================================
+     JAVASCRIPT
+     ================================================================ -->
+<script>
+// ─────────────────────────────────────────────────────────
+// CONFIG
+// ─────────────────────────────────────────────────────────
+const API_BASE = 'http://127.0.0.1:5000';
+
+const ALGO_DISPLAY = {
+  FCFS:'FCFS', SJF_NP:'SJF (Non-Preemptive)',
+  SRTF:'SRTF', PRIORITY:'Priority Scheduling', RR:'Round Robin',
+};
+
+// HSL-based palette — each process gets a unique hue on the wheel
+function processColor(id) {
+  const hue = ((id - 1) * 47 + 180) % 360;
+  return {
+    fill:   `hsla(${hue},80%,62%,0.18)`,
+    stroke: `hsla(${hue},90%,68%,0.85)`,
+    text:   `hsl(${hue},90%,75%)`,
+    glow:   `hsla(${hue},90%,68%,0.35)`,
+  };
+}
+
+// ─────────────────────────────────────────────────────────
+// STATE
+// ─────────────────────────────────────────────────────────
+let state = {
+  processes: [],
+  mlResult:  null,
+  ganttTimer: null,
+};
+
+// ─────────────────────────────────────────────────────────
+// SCREEN MANAGEMENT
+// ─────────────────────────────────────────────────────────
+function showScreen(name) {
+  document.querySelectorAll('[id^="screen-"]').forEach(e => e.classList.add('hidden'));
+  document.getElementById('screen-' + name)?.classList.remove('hidden');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// ─────────────────────────────────────────────────────────
+// GENERATE TABLE
+// ─────────────────────────────────────────────────────────
+function generateTable() {
+  const n = parseInt(document.getElementById('num-processes').value);
+  if (!n || n < 1 || n > 10) return;
+  state.processes = Array.from({ length: n }, (_, i) => ({ id: i + 1, arrival_time: 0, burst_time: 1, priority: 1 }));
+  document.getElementById('num-input-section').classList.add('hidden');
+  document.getElementById('table-section').classList.remove('hidden');
+  renderTable();
+}
+
+function renderTable() {
+  const tbody = document.getElementById('process-table-body');
+  tbody.innerHTML = state.processes.map((p, i) => {
+    const c = processColor(p.id);
+    return `<tr class="border-b border-white/[0.04] hover:bg-white/[0.02] transition-colors fade-in-up" style="animation-delay:${i * .05}s">
+      <td class="py-3 px-4">
+        <span class="inline-flex items-center gap-2 px-3 py-1 rounded-lg" style="background:${c.fill};border:1px solid ${c.stroke}">
+          <span class="w-2 h-2 rounded-full" style="background:${c.text}"></span>
+          <span class="font-mono font-semibold" style="color:${c.text}">P${p.id}</span>
+        </span>
+      </td>
+      <td class="py-3 px-4"><div class="flex justify-center">
+        <input type="number" min="0" value="${p.arrival_time}" onchange="state.processes[${i}].arrival_time=Math.max(0,parseInt(this.value)||0)"
+          class="w-24 text-center h-10 bg-transparent border border-white/10 rounded-lg focus:border-cyan-500/50 focus:outline-none text-white"/>
+      </div></td>
+      <td class="py-3 px-4"><div class="flex justify-center">
+        <input type="number" min="1" value="${p.burst_time}" onchange="state.processes[${i}].burst_time=Math.max(1,parseInt(this.value)||1)"
+          class="w-24 text-center h-10 bg-transparent border border-white/10 rounded-lg focus:border-cyan-500/50 focus:outline-none text-white"/>
+      </div></td>
+    </tr>`;
+  }).join('');
+}
+
+function resetInput() {
+  state.processes = [];
+  document.getElementById('table-section').classList.add('hidden');
+  document.getElementById('num-input-section').classList.remove('hidden');
+  document.getElementById('num-processes').value = '';
+}
+
+// ─────────────────────────────────────────────────────────
+// ANALYZE
+// ─────────────────────────────────────────────────────────
+async function analyzeWithAI() {
+  if (!state.processes.length) return;
+  showScreen('analyzing');
+  animateSteps();
+  try {
+    const resp = await fetch(`${API_BASE}/api/predict`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ processes: state.processes })
+    });
+    if (!resp.ok) throw new Error('Server error ' + resp.status);
+    state.mlResult = await resp.json();
+    setTimeout(() => showResult(), 1000);
+  } catch (err) {
+    alert('Could not reach Flask server.\nMake sure app.py is running:\n  python app.py\n\nError: ' + err.message);
+    showScreen('input');
+  }
+}
+
+function animateSteps() {
+  for (let i = 0; i < 4; i++) {
+    setTimeout(() => {
+      const step = document.getElementById('step-' + i);
+      if (!step) return;
+      step.querySelector('div').innerHTML = `<svg class="w-4 h-4 text-cyan-400 animate-spin" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>`;
+      step.querySelector('span').className = 'text-sm text-white';
+    }, 400 + i * 500);
+  }
+}
+
+function showResult() {
+  const r = state.mlResult;
+  const best = r.best;
+  document.getElementById('result-algorithm').textContent = ALGO_DISPLAY[best.algorithm] || best.algorithm;
+  document.getElementById('result-confidence').textContent = (best.probability * 100).toFixed(1) + '%';
+
+  const distEl = document.getElementById('prob-distribution');
+  distEl.innerHTML = r.probabilities.map(item => {
+    const isBest = item.algorithm === best.algorithm;
+    const pct = (item.probability * 100).toFixed(1);
+    const c = isBest ? '#00d4ff' : '#6b6b80';
+    return `<div class="flex items-center gap-3 py-1 ${isBest ? 'opacity-100' : 'opacity-60'}">
+      <span class="font-mono text-xs w-28 flex-shrink-0 truncate" style="color:${c}">${ALGO_DISPLAY[item.algorithm] || item.algorithm}</span>
+      <div class="flex-1 h-2 rounded-full bg-white/[0.06] overflow-hidden">
+        <div class="prob-bar h-full rounded-full transition-all duration-700 ease-out" data-pct="${pct}"
+          style="width:0%;background:${isBest ? 'linear-gradient(90deg,#00d4ff,#a855f7)' : 'rgba(107,107,128,.4)'}"></div>
+      </div>
+      <span class="font-mono text-xs w-10 text-right" style="color:${c}">${pct}%</span>
+      ${isBest ? '<span class="text-xs text-cyan-400 ml-1">&#10003;</span>' : '<span class="w-4 ml-1"></span>'}
+    </div>`;
+  }).join('');
+
+  showScreen('result');
+  setTimeout(() => {
+    document.getElementById('result-bar').style.width = (best.probability * 100) + '%';
+    document.querySelectorAll('.prob-bar').forEach(el => { el.style.width = el.dataset.pct + '%'; });
+  }, 150);
+}
+
+// ─────────────────────────────────────────────────────────
+// PROCEED
+// ─────────────────────────────────────────────────────────
+function proceedFromResult() {
+  const algo = state.mlResult.best.algorithm;
+  if (algo === 'RR') showConditionalScreen('RR');
+  else if (algo === 'PRIORITY') showConditionalScreen('PRIORITY');
+  else runScheduling(algo, {});
+}
+
+function showConditionalScreen(type) {
+  const badge = document.getElementById('cond-badge');
+  const title = document.getElementById('cond-title');
+  const desc = document.getElementById('cond-desc');
+  const content = document.getElementById('cond-content');
+
+  if (type === 'RR') {
+    badge.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg> Round Robin Configuration`;
+    title.textContent = 'Enter Time Quantum';
+    desc.textContent = 'Define the time slice for each process execution cycle';
+    const suggested = state.mlResult?.parameters?.quantum || 2;
+    content.innerHTML = `<div class="flex flex-col items-center gap-4">
+      <input type="number" id="input-quantum" min="1" value="${suggested}"
+        class="text-center text-4xl font-bold h-20 w-48 bg-transparent border border-white/10 rounded-xl focus:border-cyan-500/50 focus:outline-none text-white"/>
+      <p class="text-[#6b6b80]/60 text-sm">ML suggested quantum: <span class="text-cyan-400 font-mono">${suggested}</span></p>
+    </div>`;
+  } else {
+    badge.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3"/></svg> Priority Configuration`;
+    title.textContent = 'Enter Process Priorities';
+    desc.textContent = 'Lower number = higher priority';
+    content.innerHTML = `<div class="space-y-3">${state.processes.map((p, i) => {
+      const c = processColor(p.id);
+      return `<div class="flex items-center justify-between gap-4 py-2 px-3 rounded-lg bg-white/[0.02] fade-in-up" style="animation-delay:${i * .05}s">
+        <span class="font-mono font-semibold" style="color:${c.text}">P${p.id}</span>
+        <div class="flex items-center gap-2">
+          <span class="text-xs text-[#6b6b80]">Priority:</span>
+          <input type="number" id="prio-${p.id}" min="1" max="20" value="1"
+            class="w-20 text-center h-9 bg-transparent border border-white/10 rounded-lg focus:border-purple-500/50 focus:outline-none text-white"/>
+        </div>
+      </div>`;
+    }).join('')}</div>`;
+  }
+  showScreen('conditional');
+}
+
+function submitConditional() {
+  const algo = state.mlResult.best.algorithm;
+  if (algo === 'RR') {
+    const q = parseInt(document.getElementById('input-quantum').value);
+    if (!q || q < 1) return;
+    runScheduling(algo, { quantum: q });
+  } else {
+    const params = { priority_mode: state.mlResult?.parameters?.priority_mode || 'static' };
+    state.processes.forEach(p => {
+      const v = parseInt(document.getElementById('prio-' + p.id)?.value);
+      p.priority = v || 1;
+    });
+    runScheduling(algo, params);
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// RUN SCHEDULE
+// ─────────────────────────────────────────────────────────
+async function runScheduling(algo, params) {
+  try {
+    const resp = await fetch(`${API_BASE}/api/schedule`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ algorithm: algo, processes: state.processes, params })
+    });
+    if (!resp.ok) throw new Error('Server error ' + resp.status);
+    const data = await resp.json();
+    showScreen('gantt');
+    document.getElementById('gantt-algo-name').textContent = ALGO_DISPLAY[algo] || algo;
+    initCanvas(data.gantt, data);
+  } catch (err) {
+    alert('Scheduling error: ' + err.message);
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════
+//   COMPUTER GRAPHICS — Canvas 2D with Transformation Matrices
+// ══════════════════════════════════════════════════════════
+// ─────────────────────────────────────────────────────────
+
+/*
+ * 2D Transformation Matrix (homogeneous coordinates):
+ *
+ *  | a  c  e |   a = scaleX   c = skewY    e = translateX
+ *  | b  d  f |   b = skewX    d = scaleY   f = translateY
+ *  | 0  0  1 |
+ *
+ * Canvas API: ctx.setTransform(a, b, c, d, e, f)
+ *
+ * For each Gantt block we compose:
+ *   T_final = T_translate · T_scale
+ *
+ * Scale animation:  scaleX grows from 0 → 1  (block "slides in" left to right)
+ *                   scaleY grows from 0 → 1  (block "grows" top to bottom)
+ * Translation:      e = block's final x position (pivot at left edge)
+ *                   f = CANVAS_TOP (pivot at top edge)
+ */
+
+const CG = {
+  canvas: null,
+  ctx: null,
+  dpr: 1,          // device pixel ratio
+  W: 0,            // logical width
+  H: 100,          // logical height of chart area
+  PAD_LEFT: 0,
+  PAD_BOTTOM: 28,  // space for time axis
+  BLOCK_H: 72,     // block height in logical px
+  BLOCK_TOP: 4,    // y offset from top of canvas
+  gantt: [],
+  // per-block animation state
+  blocks: [],      // { seg, x, w, color, scaleX, scaleY, targetSX, targetSY, done }
+  frameId: null,
+  frameCount: 0,
+  revealIndex: 0,  // next block to start revealing
+  revealTimer: null,
+  totalDuration: 0,
+  unitPx: 0,       // pixels per time unit
+};
+
+function initCanvas(gantt, data) {
+  CG.gantt = gantt;
+  CG.blocks = [];
+  CG.frameCount = 0;
+  CG.revealIndex = 0;
+  if (CG.revealTimer) clearInterval(CG.revealTimer);
+  if (CG.frameId) cancelAnimationFrame(CG.frameId);
+
+  CG.canvas = document.getElementById('gantt-canvas');
+  CG.ctx = CG.canvas.getContext('2d');
+  CG.dpr = window.devicePixelRatio || 1;
+
+  // Logical size
+  const wrap = document.getElementById('cg-canvas-wrap');
+  CG.W = wrap.clientWidth || 800;
+  CG.H = 140;
+  CG.canvas.style.height = CG.H + 'px';
+
+  // Physical size (HiDPI)
+  CG.canvas.width  = CG.W * CG.dpr;
+  CG.canvas.height = CG.H * CG.dpr;
+  CG.ctx.scale(CG.dpr, CG.dpr);
+
+  // Compute total duration & pixels-per-unit
+  CG.totalDuration = gantt.length ? gantt[gantt.length - 1].end : 1;
+  const availW = CG.W - 8;
+  CG.unitPx = availW / CG.totalDuration;
+
+  // Build block descriptors — initial scale = 0
+  CG.blocks = gantt.map(seg => {
+    const pid   = seg.id;
+    const isIdle = pid === 0 || pid === 'IDLE';
+    const color  = isIdle ? null : processColor(pid);
+    const x = 4 + seg.start * CG.unitPx;
+    const w = Math.max((seg.end - seg.start) * CG.unitPx - 2, 2);
+    return {
+      seg, x, w, color, isIdle,
+      scaleX: 0, scaleY: 0,        // current animated scale
+      targetSX: 1, targetSY: 1,    // target scale
+      speed: 0.07,                 // lerp speed
+      done: false,
+    };
+  });
+
+  // Reveal blocks one by one
+  CG.revealTimer = setInterval(() => {
+    if (CG.revealIndex < CG.blocks.length) {
+      CG.revealIndex++;
+    } else {
+      clearInterval(CG.revealTimer);
+      CG.revealTimer = null;
+      // After all revealed, show metrics
+      setTimeout(() => {
+        document.getElementById('metrics-section').classList.remove('hidden');
+        showMetrics(data);
+      }, 600);
+    }
+  }, 480);
+
+  renderMatrixPanel(null); // init panel
+  cgLoop();
+}
+
+// ── Main render loop ──────────────────────────────────────
+function cgLoop() {
+  CG.frameId = requestAnimationFrame(cgLoop);
+  CG.frameCount++;
+  const ctx = CG.ctx;
+  const W = CG.W, H = CG.H;
+
+  // Clear
+  ctx.clearRect(0, 0, W, H);
+
+  // Background grid lines (subtle)
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0); // identity — grid is not transformed
+  ctx.strokeStyle = 'rgba(0,212,255,0.04)';
+  ctx.lineWidth = 1;
+  for (let x = 0; x < W; x += 40) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H - CG.PAD_BOTTOM); ctx.stroke();
+  }
+  ctx.restore();
+
+  // Time axis baseline
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.strokeStyle = 'rgba(0,212,255,0.15)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(4, CG.BLOCK_TOP + CG.BLOCK_H + 2);
+  ctx.lineTo(W - 4, CG.BLOCK_TOP + CG.BLOCK_H + 2);
+  ctx.stroke();
+  ctx.restore();
+
+  // ── Draw each block using Transformation Matrix ──────────
+  let liveMatrix = null;
+
+  for (let i = 0; i < CG.blocks.length; i++) {
+    const blk = CG.blocks[i];
+    if (i >= CG.revealIndex) continue; // not yet revealed
+
+    // Animate scale via lerp
+    if (!blk.done) {
+      blk.scaleX += (blk.targetSX - blk.scaleX) * blk.speed;
+      blk.scaleY += (blk.targetSY - blk.scaleY) * blk.speed;
+      if (Math.abs(blk.targetSX - blk.scaleX) < 0.001 &&
+          Math.abs(blk.targetSY - blk.scaleY) < 0.001) {
+        blk.scaleX = blk.targetSX;
+        blk.scaleY = blk.targetSY;
+        blk.done = true;
+      }
+    }
+
+    const sx = blk.scaleX;
+    const sy = blk.scaleY;
+
+    /*
+     * Compose transformation matrix:
+     *   Translate to block's (x, BLOCK_TOP)  →  T(e=blk.x, f=BLOCK_TOP)
+     *   Scale from top-left corner             →  S(sx, sy)
+     *
+     * Combined (column-major, Canvas convention):
+     *   ctx.setTransform(a, b, c, d, e, f)
+     *   a = sx  (scaleX)
+     *   b = 0   (no skew)
+     *   c = 0   (no skew)
+     *   d = sy  (scaleY)
+     *   e = blk.x              (translateX — pivot at left edge)
+     *   f = CG.BLOCK_TOP       (translateY — pivot at top)
+     */
+    const a = sx, b = 0, c = 0, d = sy;
+    const e = blk.x, f = CG.BLOCK_TOP;
+
+    ctx.save();
+    ctx.setTransform(a, b, c, d, e, f);
+
+    // Keep track of last active block's matrix for the HUD
+    if (!blk.isIdle) liveMatrix = { a, b, c, d, e: blk.x.toFixed(1), f: CG.BLOCK_TOP };
+
+    const bw = blk.w, bh = CG.BLOCK_H;
+
+    if (blk.isIdle) {
+      // Idle block — dashed border, no fill
+      ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.strokeRect(1, 0, bw - 2, bh);
+      ctx.setLineDash([]);
+
+      ctx.fillStyle = 'rgba(255,255,255,0.015)';
+      ctx.fillRect(1, 0, bw - 2, bh);
+
+      // Label (drawn in local coords — scale = 1 for text for readability)
+      if (bw > 30) {
+        ctx.save();
+        // Undo scale for text so it doesn't stretch
+        ctx.setTransform(1, 0, 0, 1, e + bw * sx / 2, f + bh * sy / 2);
+        ctx.fillStyle = 'rgba(255,255,255,0.2)';
+        ctx.font = '10px JetBrains Mono, monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('IDLE', 0, 0);
+        ctx.restore();
+      }
+    } else {
+      const col = blk.color;
+
+      // Glow shadow
+      ctx.shadowColor = col.glow;
+      ctx.shadowBlur = 10;
+
+      // Fill
+      ctx.fillStyle = col.fill;
+      ctx.beginPath();
+      ctx.roundRect(1, 0, bw - 2, bh, 6);
+      ctx.fill();
+
+      // Border
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = col.stroke;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(1, 0, bw - 2, bh, 6);
+      ctx.stroke();
+
+      // Shimmer line at top
+      ctx.fillStyle = col.stroke.replace('0.85', '0.25');
+      ctx.fillRect(2, 1, bw - 4, 2);
+
+      // Text — drawn at unscaled position
+      if (bw * sx > 28) {
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, e + bw * sx / 2, f + bh * sy / 2);
+        ctx.fillStyle = col.text;
+        ctx.font = 'bold 13px JetBrains Mono, monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('P' + blk.seg.id, 0, -7);
+
+        ctx.font = '10px JetBrains Mono, monospace';
+        ctx.fillStyle = col.stroke.replace('0.85', '0.5');
+        const dur = (blk.seg.end - blk.seg.start).toFixed(0);
+        ctx.fillText(dur + 'u', 0, 8);
+        ctx.restore();
+      }
+    }
+
+    ctx.restore(); // restores transform too
+  }
+
+  // ── Time axis labels ──────────────────────────────────
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = 'rgba(0,212,255,0.4)';
+  ctx.font = '10px JetBrains Mono, monospace';
+  ctx.textBaseline = 'top';
+
+  // Draw time ticks at each segment boundary
+  const drawn = new Set();
+  CG.gantt.slice(0, CG.revealIndex).forEach(seg => {
+    [seg.start, seg.end].forEach(t => {
+      if (drawn.has(t)) return;
+      drawn.add(t);
+      const px = 4 + t * CG.unitPx;
+      const label = Number.isInteger(t) ? String(t) : t.toFixed(1);
+      ctx.textAlign = 'center';
+      ctx.fillText(label, px, CG.BLOCK_TOP + CG.BLOCK_H + 6);
+    });
+  });
+  ctx.restore();
+
+  // ── Update HUD ────────────────────────────────────────
+  document.getElementById('cg-frame').textContent = CG.frameCount;
+  document.getElementById('cg-blocks').textContent =
+    Math.min(CG.revealIndex, CG.blocks.length) + '/' + CG.blocks.length;
+
+  if (liveMatrix) {
+    const m = liveMatrix;
+    document.getElementById('cg-transform').textContent =
+      `scale(${m.a.toFixed(3)}, ${m.d.toFixed(3)}) translate(${m.e}, ${m.f})`;
+    renderMatrixPanel(liveMatrix);
+  }
+}
+
+// ── Matrix Panel Renderer ─────────────────────────────────
+function renderMatrixPanel(m) {
+  const el = document.getElementById('matrix-display');
+  if (!m) {
+    el.innerHTML = `
+      <div>
+        <p class="text-xs text-[#6b6b80] mb-2">Current Transform Matrix — <span class="text-cyan-400/70">ctx.setTransform(a,b,c,d,e,f)</span></p>
+        <div class="matrix-grid">
+          ${['a','b','c','d','e','f','0','0','1'].map(v=>
+            `<div class="matrix-cell" style="color:rgba(0,212,255,0.3)">${v}</div>`).join('')}
+        </div>
+      </div>
+      <div class="text-xs text-[#6b6b80] max-w-xs leading-relaxed mt-1">
+        <p class="text-cyan-400/70 font-mono mb-1">Matrix columns:</p>
+        <p>a = scaleX &nbsp; d = scaleY</p>
+        <p>e = translateX &nbsp; f = translateY</p>
+        <p>b,c = skew (0 here) &nbsp; bottom row = [0,0,1]</p>
+      </div>`;
+    return;
+  }
+  const vals = [
+    { v: m.a.toFixed(3), active: m.a !== 1 },
+    { v: m.b.toFixed(0), active: false },
+    { v: m.e,            active: m.e > 0 },
+    { v: m.c.toFixed(0), active: false },
+    { v: m.d.toFixed(3), active: m.d !== 1 },
+    { v: m.f,            active: m.f > 0 },
+    { v: '0', active: false },
+    { v: '0', active: false },
+    { v: '1', active: false },
+  ];
+  el.innerHTML = `
+    <div>
+      <p class="text-xs text-[#6b6b80] mb-2">Current Transform Matrix — <span class="text-cyan-400/70">ctx.setTransform(a,b,c,d,e,f)</span></p>
+      <div class="matrix-grid">
+        ${vals.map(c =>
+          `<div class="matrix-cell ${c.active ? 'active' : ''}">${c.v}</div>`).join('')}
+      </div>
+    </div>
+    <div class="text-xs text-[#6b6b80] max-w-xs leading-relaxed mt-1">
+      <p class="text-cyan-400/70 font-mono mb-1">Live values:</p>
+      <p><span class="text-white/70">scaleX (a)</span> = ${m.a.toFixed(4)}</p>
+      <p><span class="text-white/70">scaleY (d)</span> = ${m.d.toFixed(4)}</p>
+      <p><span class="text-white/70">translateX (e)</span> = ${m.e} px</p>
+      <p><span class="text-white/70">translateY (f)</span> = ${m.f} px</p>
+    </div>`;
+}
+
+// ─────────────────────────────────────────────────────────
+// METRICS DISPLAY
+// ─────────────────────────────────────────────────────────
+function showMetrics(data) {
+  const m = data.metrics;
+  document.getElementById('metric-wt').textContent  = m.avg_waiting.toFixed(2);
+  document.getElementById('metric-tat').textContent = m.avg_turnaround.toFixed(2);
+  document.getElementById('metric-rt').textContent  = m.avg_response.toFixed(2);
+
+  const matchIcon = data.match
+    ? `<span class="text-emerald-400">✓ Prediction Correct</span>`
+    : `<span class="text-amber-400">~ Near Miss (actual best: ${ALGO_DISPLAY[data.actual_best] || data.actual_best})</span>`;
+
+  const costRows = Object.entries(data.all_costs || {})
+    .sort((a, b) => a[1] - b[1])
+    .map(([a, c]) => {
+      const isBest = a === data.actual_best;
+      return `<div class="flex items-center justify-between py-1 ${isBest ? 'text-cyan-400' : 'text-[#6b6b80]'}">
+        <span class="font-mono text-xs">${ALGO_DISPLAY[a] || a}</span>
+        <span class="font-mono text-xs">${c.toFixed(4)} ${isBest ? '← best' : ''}</span>
+      </div>`;
+    }).join('');
+
+  document.getElementById('verification-card').innerHTML = `
+    <div class="flex items-center justify-between mb-3">
+      <span class="text-sm font-semibold">ML Prediction</span>
+      <span class="text-sm">${matchIcon}</span>
+    </div>
+    <div class="text-xs text-[#6b6b80] mb-2">Weighted Cost = 0.5·WT + 0.3·TAT + 0.2·RT (lower = better)</div>
+    <div class="divide-y divide-white/[0.04]">${costRows}</div>
+    <div class="mt-3 pt-3 border-t border-white/[0.06] flex justify-between text-xs">
+      <span class="text-[#6b6b80]">Selected algorithm cost</span>
+      <span class="font-mono text-cyan-400">${data.cost.toFixed(4)}</span>
+    </div>`;
+
+  const tbody = document.getElementById('detail-table-body');
+  tbody.innerHTML = m.detail.map((p, i) => {
+    const c = processColor(p.id);
+    return `<tr class="border-b border-white/[0.04] hover:bg-white/[0.02] transition-colors fade-in-up" style="animation-delay:${i * .05}s">
+      <td class="py-2 px-3 text-center"><span class="font-mono font-semibold" style="color:${c.text}">P${p.id}</span></td>
+      <td class="py-2 px-3 text-center text-[#6b6b80]">${p.at}</td>
+      <td class="py-2 px-3 text-center text-[#6b6b80]">${p.bt}</td>
+      <td class="py-2 px-3 text-center text-white font-medium">${p.ct.toFixed(2)}</td>
+      <td class="py-2 px-3 text-center text-cyan-400 font-medium">${p.tat.toFixed(2)}</td>
+      <td class="py-2 px-3 text-center text-purple-400 font-medium">${p.wt.toFixed(2)}</td>
+      <td class="py-2 px-3 text-center text-emerald-400 font-medium">${p.rt.toFixed(2)}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ─────────────────────────────────────────────────────────
+// FULL RESET
+// ─────────────────────────────────────────────────────────
+function fullReset() {
+  if (CG.revealTimer) { clearInterval(CG.revealTimer); CG.revealTimer = null; }
+  if (CG.frameId) { cancelAnimationFrame(CG.frameId); CG.frameId = null; }
+  if (state.ganttTimer) { clearInterval(state.ganttTimer); state.ganttTimer = null; }
+  state = { processes: [], mlResult: null, ganttTimer: null };
+  resetInput();
+  showScreen('landing');
+}
+</script>
+</body>
+</html>
